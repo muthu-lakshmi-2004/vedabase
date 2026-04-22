@@ -20,10 +20,25 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.muthulakshmi.vedabase"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-asset",
+        {
+          "assets": [
+            "assets/database/vedabase_new.db"
+          ]
+        }
+      ]
+    ],
+    "assetBundlePatterns": [
+      "**/*"
+    ]
   }
 }
