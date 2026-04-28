@@ -14,20 +14,22 @@ export async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
   }
 
   const dbInfo = await FileSystem.getInfoAsync(dbPath);
-  if (!dbInfo.exists) {
-    console.log('DB copying from assets...');
-    const asset = Asset.fromModule(require('../../assets/database/vedabase_new.db'));
-    
+  if (true) {
+    console.log("DB copying from assets...");
+    const asset = Asset.fromModule(
+      require("../../assets/database/vedabase_new.db"),
+    );
+
     // downloadAsync() illama direct localUri use pannunga
     await asset.downloadAsync();
-    
+
     const uri = asset.localUri ?? asset.uri;
-    
+
     await FileSystem.copyAsync({
       from: uri,
       to: dbPath,
     });
-    console.log('DB copy done!');
+    console.log("DB copy done!");
   }
 
   return SQLite.openDatabaseAsync(DB_NAME);
