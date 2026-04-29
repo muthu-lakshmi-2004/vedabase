@@ -1,0 +1,104 @@
+import { useEffect, useState } from "react";
+import {
+  FlatList,
+  TouchableOpacity,
+  Text,
+  View,
+  ActivityIndicator,
+} from "react-native";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { RootStackParamList } from "../../App";
+import { getVerseListByDivision } from "../api/division";
+import { useDatabase } from "../context/DatabaseContext";
+import { Division } from "../types";
+
+type Props = NativeStackScreenProps<RootStackParamList, "VerseList">;
+
+function getFirstSentence(content: string): string {
+  const cleaned = content
+    .replace(/^Bhagavad-gita As It Is[^.]*\n?/i, "")
+    .trim();
+  const lines = cleaned.split(/\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 20 && /[A-Z]/.test(trimmed[0])) {
+      return trimmed.length > 100 ? trimmed.substring(0, 100) + "..." : trimmed;
+    }
+  }
+  return cleaned.substring(0, 100) + "...";
+}
+
+export default function VerseListScreen({ route, navigation }: Props) {
+  const db = useDatabase();
+  const { divisionId, divisionName } = route.params;
+  const [verses, setVerses] = useState<Division[]>([]);
+  const [verseContents, setVerseContents] = useState<Record<number, string>>(
+    {},
+  );
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getVerseListByDivision(db, divisionId)
+      .then(async (divs) => {
+        setVerses(divs);
+        const contents: Record<number, string> = {};
+        for (const d of divs) {
+          const v = await db.getFirstAsync<{ content: string }>(
+            `SELECT content FROM verse WHERE division_id = ? LIMIT 1`,
+            [d.id],
+          );
+          if (v) contents[d.id] = getFirstSentence(v.content);
+        }
+        setVerseContents(contents);
+      })
+      .finally(() => setLoading(false));
+  }, [divisionId]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#8B0000" />
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      data={verses}
+      keyExtractor={(item) => item.id.toString()}
+      contentContainerStyle={{ paddingVertical: 8, backgroundColor: "#fdf6e3" }}
+      renderItem={({ item, index }) => (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("Verse", {
+              divisionId: item.id,
+              divisionName: divisionName,
+            })
+          }
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderColor: "#e8d9b5",
+            backgroundColor: "#fdf6e3",
+          }}
+        >
+          {/* ✅ TEXT 1: red bold */}
+          <Text
+            style={{
+              color: "#8B0000",
+              fontWeight: "bold",
+              fontSize: 15,
+              marginBottom: 4,
+            }}
+          >
+            TEXT {index + 1}:
+          </Text>
+          <Text style={{ fontSize: 15, color: "#1a1a1a", lineHeight: 22 }}>
+            {verseContents[item.id] || "Loading..."}
+          </Text>
+        </TouchableOpacity>
+      )}
+    />
+  );
+}

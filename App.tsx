@@ -6,12 +6,14 @@ import { SQLiteDatabase } from "expo-sqlite";
 import { View, ActivityIndicator } from "react-native";
 import { DatabaseProvider } from "./src/context/DatabaseContext";
 import BookListScreen from "./src/screens/BookListScreen";
-import DivisionScreen from "./src/screens/DivisionScreen";
+import BookIndexScreen from "./src/screens/Bookindexscreen";
+import VerseListScreen from "./src/screens/VerseListScreen";
 import VerseScreen from "./src/screens/VerseScreen";
 
 export type RootStackParamList = {
   BookList: undefined;
-  Division: { bookId: number; bookName: string };
+  BookIndex: { bookId: number; bookName: string };
+  VerseList: { divisionId: number; divisionName: string };
   Verse: { divisionId: number; divisionName: string };
 };
 
@@ -47,9 +49,14 @@ export default function App() {
             options={{ title: "Vedabase" }}
           />
           <Stack.Screen
-            name="Division"
-            component={DivisionScreen}
+            name="BookIndex"
+            component={BookIndexScreen}
             options={({ route }) => ({ title: route.params.bookName })}
+          />
+          <Stack.Screen
+            name="VerseList"
+            component={VerseListScreen}
+            options={({ route }) => ({ title: route.params.divisionName })}
           />
           <Stack.Screen
             name="Verse"

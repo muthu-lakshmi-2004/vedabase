@@ -3,7 +3,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
 import { useEffect, useState } from "react";
 import { getDivisionsByBook } from "../api/division";
-import { useDatabase } from "../context/DatabaseContext"; // ✅ add
+import { useDatabase } from "../context/DatabaseContext"; 
 import { Division } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Division">;
@@ -25,7 +25,6 @@ export default function DivisionScreen({ route, navigation }: Props) {
         <TouchableOpacity
           onPress={() =>
             navigation.navigate("Verse", {
-              // ✅ db pass பண்ணாதே
               divisionId: item.id,
               divisionName: item.name,
             })

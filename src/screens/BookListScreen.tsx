@@ -39,7 +39,7 @@ export default function BookListScreen({ navigation }: Props) {
       renderItem={({ item }) => (
         <TouchableOpacity
           onPress={() =>
-            navigation.navigate("Division", {
+            navigation.navigate("BookIndex", {
               bookId: item.id,
               bookName: item.name,
             })
