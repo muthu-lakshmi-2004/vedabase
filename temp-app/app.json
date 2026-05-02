@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "vedabase",
-    "slug": "vedabase",
+    "name": "temp-app",
+    "slug": "temp-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -20,30 +20,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.muthulakshmi.vedabase"
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-sqlite",
-      [
-        "expo-asset",
-        {
-          "assets": [
-            "assets/database/vedabase_new.db"
-          ]
-        }
-      ]
-    ],
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "6092b553-acc3-4ea2-9615-dc40a10dd1cc"
-      }
     }
   }
 }
