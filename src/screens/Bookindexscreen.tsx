@@ -6,15 +6,12 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
+
 import { getDivisionsByBook, getVerseListByDivision } from "../api/division";
 import { useDatabase } from "../context/DatabaseContext";
 import { Division } from "../types";
 
-type Props = NativeStackScreenProps<RootStackParamList, "BookIndex">;
-
-export default function BookIndexScreen({ route, navigation }: Props) {
+export default function BookIndexScreen({ route, navigation }: any) {
   const db = useDatabase();
   const { bookId } = route.params;
   const [divisions, setDivisions] = useState<Division[]>([]);

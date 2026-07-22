@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { FlatList, TouchableOpacity, Image, Text, View } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
+import { FlatList, TouchableOpacity, Image, Text } from "react-native";
 import { getAllBooks } from "../api/book";
 import { useDatabase } from "../context/DatabaseContext";
 import { Book } from "../types";
@@ -22,9 +20,7 @@ const imageMap: Record<string, any> = {
   "image_13.png": require("../../assets/images/image_13.png"),
 };
 
-type Props = NativeStackScreenProps<RootStackParamList, "BookList">;
-
-export default function BookListScreen({ navigation }: Props) {
+export default function BookListScreen({ navigation }: any) {
   const db = useDatabase();
   const [books, setBooks] = useState<Book[]>([]);
 
@@ -36,6 +32,9 @@ export default function BookListScreen({ navigation }: Props) {
     <FlatList
       data={books}
       keyExtractor={(item) => item.id.toString()}
+      numColumns={2}
+      contentContainerStyle={{ padding: 10 }}
+      columnWrapperStyle={{ justifyContent: "space-between" }}
       renderItem={({ item }) => (
         <TouchableOpacity
           onPress={() =>
@@ -45,19 +44,28 @@ export default function BookListScreen({ navigation }: Props) {
             })
           }
           style={{
-            flexDirection: "row",
-            padding: 15,
+            width: "48%",
+            marginBottom: 16,
             alignItems: "center",
-            borderBottomWidth: 1,
-            borderColor: "#eee",
+            backgroundColor: "#fff",
+            borderRadius: 8,
+            padding: 12,
+            elevation: 2,
           }}
         >
           <Image
             source={imageMap[item.image]}
-            style={{ width: 50, height: 50, marginRight: 15 }}
+            style={{ width: 90, height: 90, marginBottom: 10 }}
             resizeMode="contain"
           />
-          <Text style={{ fontSize: 16, color: "#8B0000", fontWeight: "bold" }}>
+          <Text
+            style={{
+              fontSize: 16,
+              color: "#8B0000",
+              fontWeight: "bold",
+              textAlign: "center",
+            }}
+          >
             {item.name}
           </Text>
         </TouchableOpacity>

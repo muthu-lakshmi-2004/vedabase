@@ -36,3 +36,23 @@ export async function getVerseListByDivision(
     [divisionId],
   );
 }
+export async function getSiblingDivisions(
+  db: SQLiteDatabase,
+  divisionId: number,
+): Promise<Division[]> {
+  const current = await db.getFirstAsync<Division>(
+    `SELECT * FROM divisions WHERE id = ?`,
+    [divisionId],
+  );
+  if (!current) return [];
+
+  return await db.getAllAsync<Division>(
+    `SELECT d.id, d.book_id, d.parent_id, d.sequence,
+            COALESCE(v.title, d.name) as name
+     FROM divisions d
+     LEFT JOIN verse v ON v.division_id = d.id
+     WHERE d.parent_id = ?
+     ORDER BY d.sequence ASC`,
+    [current.parent_id],
+  );
+}

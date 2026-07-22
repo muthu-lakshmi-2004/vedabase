@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
-import { ScrollView, Text, View, ActivityIndicator } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
-import { useDatabase } from "../context/DatabaseContext";
-import { Verse } from "../types";
+import { useEffect, useState, useRef, useCallback } from "react";
+import {
+  ScrollView,
+  Text,
+  View,
+  ActivityIndicator,
+  TouchableOpacity,
+} from "react-native";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Verse">;
+import { useDatabase } from "../context/DatabaseContext";
+import { Verse, Division } from "../types";
+import { getSiblingDivisions } from "../api/division";
+import { isBookmarked, addBookmark, removeBookmark } from "../api/bookmark";
+import AdvancedSelector, { DisplaySettings } from "../components/AdvancedSelector";
 
 interface SynonymEntry {
   word: string;
@@ -20,34 +26,55 @@ interface ParsedVerse {
   purport: string;
 }
 
+function stripDuplicateTrailingHeader(sanskrit: string): string {
+  const words = sanskrit.trim().split(/\s+/);
+  if (words.length < 4) return sanskrit;
+
+  const normalize = (w: string) => {
+    let s = w
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z]/g, "")
+      .toLowerCase();
+    s = s.replace(/h$/, "");
+    return s;
+  };
+
+  for (let len = Math.min(3, Math.floor(words.length / 2)); len >= 1; len--) {
+    const head = words.slice(0, len).map(normalize).join("");
+    const tail = words.slice(words.length - len).map(normalize).join("");
+    if (head && head === tail) {
+      return words.slice(0, words.length - len).join(" ").trim();
+    }
+  }
+  return sanskrit;
+}
 
 function parseContent(raw: string, verseTitle: string): ParsedVerse {
   let text = raw.trim();
-
 
   if (verseTitle && text.startsWith(verseTitle)) {
     text = text.slice(verseTitle.length).trim();
   } else {
     const autoTitle = text.match(
-      /^[A-Za-z\-āīūṛṝḷśṣṭḍṇṁḥÀ-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
+      /^[A-Za-z\-ĀīūṛṇśṣṭḍṇḥÀ-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
     );
     if (autoTitle) text = text.slice(autoTitle[0].length).trim();
   }
-
 
   const firstDash = text.indexOf(" — ");
   if (firstDash === -1) {
     return {
       title: verseTitle,
-      sanskrit: text,
+      sanskrit: stripDuplicateTrailingHeader(text),
       synonyms: [],
       translation: "",
       purport: "",
     };
   }
 
-  const sanskrit = text.slice(0, firstDash).trim();
-  const fromSynonyms = text.slice(firstDash); // starts with " — ..."
+  const sanskrit = stripDuplicateTrailingHeader(text.slice(0, firstDash).trim());
+  const fromSynonyms = text.slice(firstDash);
   const synonymEndRegex = /\s\.\s([A-ZĀĪŪṚŚṢṬḌṆ])/g;
   let synonymEndIdx = -1;
   let match;
@@ -56,7 +83,7 @@ function parseContent(raw: string, verseTitle: string): ParsedVerse {
     synonymEndRegex.lastIndex = firstSemicolon;
     match = synonymEndRegex.exec(fromSynonyms);
     if (match) {
-      synonymEndIdx = match.index + match[0].length - 1; // after ". "
+      synonymEndIdx = match.index + match[0].length - 1;
     }
   }
 
@@ -95,37 +122,38 @@ function parseContent(raw: string, verseTitle: string): ParsedVerse {
 
 function parseSynonyms(raw: string): SynonymEntry[] {
   if (!raw) return [];
-
   const pairs = raw.split(/\s*;\s*/);
   const entries: SynonymEntry[] = [];
-
   for (const pair of pairs) {
     const dashIdx = pair.indexOf(" — ");
     if (dashIdx === -1) continue;
-
     const word = pair.slice(0, dashIdx).trim();
-    const meaning = pair
-      .slice(dashIdx + 3)
-      .trim()
-      .replace(/\.\s*$/, ""); 
-
+    const meaning = pair.slice(dashIdx + 3).trim().replace(/\.\s*$/, "");
     if (word && meaning && word.length < 60) {
       entries.push({ word, meaning });
     }
   }
-
   return entries;
 }
 
-
-function VerseTitle({ title }: { title: string }) {
+function VerseTitle({
+  title,
+  settings,
+  onToggle,
+}: {
+  title: string;
+  settings: DisplaySettings;
+  onToggle: (key: keyof DisplaySettings) => void;
+}) {
   return (
     <View
       style={{
         backgroundColor: "#f5e6c8",
         paddingHorizontal: 20,
-        paddingVertical: 18,
+        paddingVertical: 14,
+        flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
         borderBottomWidth: 1,
         borderBottomColor: "#e8d9b5",
       }}
@@ -135,19 +163,20 @@ function VerseTitle({ title }: { title: string }) {
           fontSize: 12,
           fontWeight: "700",
           color: "#8B0000",
-          textAlign: "center",
           letterSpacing: 1.2,
           textTransform: "uppercase",
+          flex: 1,
+          marginRight: 8,
         }}
       >
         {title}
       </Text>
+      <AdvancedSelector settings={settings} onToggle={onToggle} />
     </View>
   );
 }
 
 function SanskritBlock({ text }: { text: string }) {
-  // Group words into lines of ~5 words each for readability
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   for (let i = 0; i < words.length; i += 5) {
@@ -169,6 +198,7 @@ function SanskritBlock({ text }: { text: string }) {
           key={i}
           style={{
             fontStyle: "italic",
+            fontWeight: "bold",
             fontSize: 16,
             color: "#1a1a1a",
             textAlign: "center",
@@ -210,27 +240,17 @@ function SectionLabel({ label }: { label: string }) {
 
 function SynonymsBlock({ entries }: { entries: SynonymEntry[] }) {
   if (entries.length === 0) return null;
-
   return (
     <View>
       <SectionLabel label="Synonyms" />
       <Text style={{ fontSize: 15, lineHeight: 30, color: "#1a1a1a" }}>
         {entries.map((entry, i) => (
           <Text key={i}>
-            <Text
-              style={{
-                color: "#8B0000",
-                fontStyle: "italic",
-                fontWeight: "600",
-              }}
-            >
+            <Text style={{ color: "#8B0000", fontStyle: "italic", fontWeight: "600" }}>
               {entry.word}
             </Text>
-        
             <Text style={{ color: "#666" }}>{" — "}</Text>
-        
             <Text style={{ color: "#1a1a1a" }}>{entry.meaning}</Text>
-        
             {i < entries.length - 1 ? (
               <Text style={{ color: "#888" }}>{" ; "}</Text>
             ) : (
@@ -245,7 +265,6 @@ function SynonymsBlock({ entries }: { entries: SynonymEntry[] }) {
 
 function TranslationBlock({ text }: { text: string }) {
   if (!text) return null;
-
   return (
     <View>
       <SectionLabel label="Translation" />
@@ -255,6 +274,7 @@ function TranslationBlock({ text }: { text: string }) {
           lineHeight: 28,
           color: "#1a1a1a",
           fontStyle: "italic",
+          fontWeight: "bold",
         }}
       >
         {text}
@@ -265,19 +285,12 @@ function TranslationBlock({ text }: { text: string }) {
 
 function PurportBlock({ text }: { text: string }) {
   if (!text) return null;
-
   const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
   const paragraphs: string[] = [];
   const perPara = 4;
   for (let i = 0; i < sentences.length; i += perPara) {
-    paragraphs.push(
-      sentences
-        .slice(i, i + perPara)
-        .join("")
-        .trim(),
-    );
+    paragraphs.push(sentences.slice(i, i + perPara).join("").trim());
   }
-
   return (
     <View>
       <SectionLabel label="Purport" />
@@ -299,20 +312,98 @@ function PurportBlock({ text }: { text: string }) {
   );
 }
 
-export default function VerseScreen({ route }: Props) {
+export default function VerseScreen({ route, navigation }: any) {
   const db = useDatabase();
   const { divisionId, divisionName } = route.params;
   const [verse, setVerse] = useState<Verse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [siblings, setSiblings] = useState<Division[]>([]);
+  const [settings, setSettings] = useState<DisplaySettings>({
+    mantra: true,
+    synonyms: true,
+    translation: true,
+    purport: true,
+  });
+  const touchStart = useRef({ x: 0, y: 0 });
+
+  const toggleSetting = (key: keyof DisplaySettings) => {
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
+    setLoading(true);
     db.getFirstAsync<Verse>(
       `SELECT * FROM verse WHERE division_id = ? LIMIT 1`,
       [divisionId],
     )
       .then(setVerse)
       .finally(() => setLoading(false));
+
+    isBookmarked(db, divisionId).then(setBookmarked);
+    getSiblingDivisions(db, divisionId).then(setSiblings);
   }, [divisionId]);
+
+  const toggleBookmark = useCallback(async () => {
+    if (bookmarked) {
+      await removeBookmark(db, divisionId);
+      setBookmarked(false);
+    } else {
+      await addBookmark(db, divisionId, divisionName);
+      setBookmarked(true);
+    }
+  }, [bookmarked, divisionId, divisionName]);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate("Notes", { divisionId, divisionName })}
+            style={{ marginRight: 12 }}
+          >
+            <Text style={{ color: "#fff", fontSize: 20 }}>📝</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleBookmark} style={{ marginRight: 12 }}>
+            <Text style={{ color: "#fff", fontSize: 22 }}>{bookmarked ? "★" : "☆"}</Text>
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [bookmarked, toggleBookmark, divisionId, divisionName]);
+
+  const currentIndex = siblings.findIndex((s) => s.id === divisionId);
+  const prevDivision = currentIndex > 0 ? siblings[currentIndex - 1] : null;
+  const nextDivision =
+    currentIndex !== -1 && currentIndex < siblings.length - 1
+      ? siblings[currentIndex + 1]
+      : null;
+
+  const handleTouchStart = (e: any) => {
+    touchStart.current = {
+      x: e.nativeEvent.pageX,
+      y: e.nativeEvent.pageY,
+    };
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const dx = e.nativeEvent.pageX - touchStart.current.x;
+    const dy = e.nativeEvent.pageY - touchStart.current.y;
+
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) {
+      if (dx < 0 && nextDivision) {
+        navigation.replace("Verse", {
+          divisionId: nextDivision.id,
+          divisionName: nextDivision.name,
+        });
+      } else if (dx > 0 && prevDivision) {
+        navigation.replace("Verse", {
+          divisionId: prevDivision.id,
+          divisionName: prevDivision.name,
+        });
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -333,18 +424,23 @@ export default function VerseScreen({ route }: Props) {
   const parsed = parseContent(verse.content, verse.title ?? divisionName);
 
   return (
-    <ScrollView
-      style={{ backgroundColor: "#fdf6e3" }}
-      contentContainerStyle={{ paddingBottom: 52 }}
+    <View
+      style={{ flex: 1 }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
-      <VerseTitle title={parsed.title} />
-
-      <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
-        {parsed.sanskrit ? <SanskritBlock text={parsed.sanskrit} /> : null}
-        <SynonymsBlock entries={parsed.synonyms} />
-        <TranslationBlock text={parsed.translation} />
-        <PurportBlock text={parsed.purport} />
-      </View>
-    </ScrollView>
+      <ScrollView
+        style={{ backgroundColor: "#fdf6e3" }}
+        contentContainerStyle={{ paddingBottom: 52 }}
+      >
+        <VerseTitle title={parsed.title} settings={settings} onToggle={toggleSetting} />
+        <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
+          {settings.mantra && parsed.sanskrit ? <SanskritBlock text={parsed.sanskrit} /> : null}
+          {settings.synonyms ? <SynonymsBlock entries={parsed.synonyms} /> : null}
+          {settings.translation ? <TranslationBlock text={parsed.translation} /> : null}
+          {settings.purport ? <PurportBlock text={parsed.purport} /> : null}
+        </View>
+      </ScrollView>
+    </View>
   );
 }

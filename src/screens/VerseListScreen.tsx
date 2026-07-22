@@ -6,29 +6,28 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
+
 import { getVerseListByDivision } from "../api/division";
 import { useDatabase } from "../context/DatabaseContext";
 import { Division } from "../types";
 
-type Props = NativeStackScreenProps<RootStackParamList, "VerseList">;
 
 function getFirstSentence(content: string): string {
   const cleaned = content
     .replace(/^Bhagavad-gita As It Is[^.]*\n?/i, "")
+    .replace(/^[\s.]+/, "")
     .trim();
   const lines = cleaned.split(/\n/);
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length > 20 && /[A-Z]/.test(trimmed[0])) {
+    const trimmed = line.replace(/^[\s.]+/, "").trim();
+    if (trimmed.length > 20 && /[A-Za-z]/.test(trimmed[0])) {
       return trimmed.length > 100 ? trimmed.substring(0, 100) + "..." : trimmed;
     }
   }
   return cleaned.substring(0, 100) + "...";
 }
 
-export default function VerseListScreen({ route, navigation }: Props) {
+export default function VerseListScreen({ route, navigation }: any) {
   const db = useDatabase();
   const { divisionId, divisionName } = route.params;
   const [verses, setVerses] = useState<Division[]>([]);

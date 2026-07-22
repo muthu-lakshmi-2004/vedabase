@@ -14,23 +14,33 @@ export async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
   }
 
   const dbInfo = await FileSystem.getInfoAsync(dbPath);
-  if (true) {
+  if (!dbInfo.exists) {
     console.log("DB copying from assets...");
-    const asset = Asset.fromModule(
-      require("../../assets/database/vedabase_new.db"),
-    );
-
-    // downloadAsync() illama direct localUri use pannunga
+    const asset = Asset.fromModule(require("../../assets/database/vedabase_new.db"));
     await asset.downloadAsync();
-
     const uri = asset.localUri ?? asset.uri;
-
-    await FileSystem.copyAsync({
-      from: uri,
-      to: dbPath,
-    });
+    await FileSystem.copyAsync({ from: uri, to: dbPath });
     console.log("DB copy done!");
   }
 
-  return SQLite.openDatabaseAsync(DB_NAME);
+  const db = await SQLite.openDatabaseAsync(DB_NAME);
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      division_id INTEGER NOT NULL UNIQUE,
+      division_name TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS notes (
+      division_id INTEGER PRIMARY KEY,
+      content TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  return db;
 }

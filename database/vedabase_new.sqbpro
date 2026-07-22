@@ -1,17 +1,32 @@
-<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="vedabase_new.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="1"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="1527"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="0" parent="0"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="books" custom_title="0" dock_id="1" table="4,5:mainbooks"/><table title="books" custom_title="0" dock_id="2" table="4,5:mainbooks"/><dock_state state="000000ff00000000fd00000001000000020000033b0000022efc0100000001fc000000000000033b0000011e00fffffffa000000010100000002fb000000160064006f0063006b00420072006f00770073006500310100000000ffffffff0000011e00fffffffb000000160064006f0063006b00420072006f00770073006500320100000000ffffffff0000011e00ffffff000002580000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="books" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_" freeze_columns="0"><sort/><column_widths><column index="1" value="29"/><column index="2" value="239"/><column index="3" value="382"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1*">-- Step 1: 14-26 delete பண்ணு (duplicate rows)
-DELETE FROM books WHERE id &gt;= 14;
-
--- Step 2: 1-13 rows-ல image update பண்ணு
-UPDATE books SET image = 'image_1.png' WHERE id = 1;
-UPDATE books SET image = 'image_2.png' WHERE id = 2;
-UPDATE books SET image = 'image_3.png' WHERE id = 3;
-UPDATE books SET image = 'image_4.png' WHERE id = 4;
-UPDATE books SET image = 'image_5.png' WHERE id = 5;
-UPDATE books SET image = 'image_6.png' WHERE id = 6;
-UPDATE books SET image = 'image_7.png' WHERE id = 7;
-UPDATE books SET image = 'image_8.png' WHERE id = 8;
-UPDATE books SET image = 'image_9.png' WHERE id = 9;
-UPDATE books SET image = 'image_10.png' WHERE id = 10;
-UPDATE books SET image = 'image_11.png' WHERE id = 11;
-UPDATE books SET image = 'image_12.png' WHERE id = 12;
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="vedabase_new.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="1"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="1527"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="0" parent="0"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="books" custom_title="0" dock_id="1" table="4,5:mainbooks"/><table title="books" custom_title="0" dock_id="2" table="4,5:mainbooks"/><dock_state state="000000ff00000000fd00000001000000020000033b0000022efc0100000001fc000000000000033b0000011e00fffffffa000000010100000002fb000000160064006f0063006b00420072006f00770073006500310100000000ffffffff0000011e00fffffffb000000160064006f0063006b00420072006f00770073006500320100000000ffffffff0000011e00ffffff000002580000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="books" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_" freeze_columns="0"><sort/><column_widths><column index="1" value="29"/><column index="2" value="239"/><column index="3" value="382"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1*">-- Step 1: 14-26 delete பண்ணு (duplicate rows)
+
+DELETE FROM books WHERE id &gt;= 14;
+
+
+
+
+UPDATE books SET image = 'image_1.png' WHERE id = 1;
+
+UPDATE books SET image = 'image_2.png' WHERE id = 2;
+
+UPDATE books SET image = 'image_3.png' WHERE id = 3;
+
+UPDATE books SET image = 'image_4.png' WHERE id = 4;
+
+UPDATE books SET image = 'image_5.png' WHERE id = 5;
+
+UPDATE books SET image = 'image_6.png' WHERE id = 6;
+
+UPDATE books SET image = 'image_7.png' WHERE id = 7;
+
+UPDATE books SET image = 'image_8.png' WHERE id = 8;
+
+UPDATE books SET image = 'image_9.png' WHERE id = 9;
+
+UPDATE books SET image = 'image_10.png' WHERE id = 10;
+
+UPDATE books SET image = 'image_11.png' WHERE id = 11;
+
+UPDATE books SET image = 'image_12.png' WHERE id = 12;
+
 UPDATE books SET image = 'image_13.png' WHERE id = 13;</sql><current_tab id="0"/></tab_sql></sqlb_project>
