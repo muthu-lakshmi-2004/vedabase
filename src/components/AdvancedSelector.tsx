@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { TouchableOpacity, Text, Modal, View, Pressable } from "react-native";
-
-export interface DisplaySettings {
-  mantra: boolean;
-  synonyms: boolean;
-  translation: boolean;
-  purport: boolean;
-}
+import { useDisplaySettings, DisplaySettings } from "../context/DisplaySettingsContext";
 
 const OPTIONS: { key: keyof DisplaySettings; label: string }[] = [
   { key: "mantra", label: "Mantra" },
@@ -15,18 +9,15 @@ const OPTIONS: { key: keyof DisplaySettings; label: string }[] = [
   { key: "purport", label: "Purport" },
 ];
 
-interface Props {
-  settings: DisplaySettings;
-  onToggle: (key: keyof DisplaySettings) => void;
-}
-
-export default function AdvancedSelector({ settings, onToggle }: Props) {
+export default function AdvancedSelector() {
+  const { settings, toggle } = useDisplaySettings();
   const [visible, setVisible] = useState(false);
 
   return (
     <>
-      <TouchableOpacity onPress={() => setVisible(true)} style={{ marginRight: 12 }}>
-<Text style={{ color: "#8B0000", fontSize: 13, fontWeight: "700" }}>Advanced ▾</Text>      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setVisible(true)}>
+        <Text style={{ color: "#8B0000", fontSize: 13, fontWeight: "700" }}>Advanced ▾</Text>
+      </TouchableOpacity>
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <Pressable
@@ -40,7 +31,7 @@ export default function AdvancedSelector({ settings, onToggle }: Props) {
             {OPTIONS.map((opt) => (
               <TouchableOpacity
                 key={opt.key}
-                onPress={() => onToggle(opt.key)}
+                onPress={() => toggle(opt.key)}
                 style={{
                   flexDirection: "row",
                   alignItems: "center",

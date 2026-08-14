@@ -3,19 +3,27 @@ import {
   ScrollView,
   Text,
   View,
+  TextInput,
   ActivityIndicator,
   TouchableOpacity,
 } from "react-native";
 
 import { useDatabase } from "../context/DatabaseContext";
+import { useDisplaySettings } from "../context/DisplaySettingsContext";
 import { Verse, Division } from "../types";
 import { getSiblingDivisions } from "../api/division";
 import { isBookmarked, addBookmark, removeBookmark } from "../api/bookmark";
-import AdvancedSelector, { DisplaySettings } from "../components/AdvancedSelector";
+import AdvancedSelector from "../components/AdvancedSelector";
 
 interface SynonymEntry {
   word: string;
   meaning: string;
+}
+
+interface UniversalBlock {
+  type: "sanskrit" | "prose";
+  text: string;
+  isVerseTranslation: boolean;
 }
 
 interface ParsedVerse {
@@ -24,7 +32,10 @@ interface ParsedVerse {
   synonyms: SynonymEntry[];
   translation: string;
   purport: string;
+  universalBlocks?: UniversalBlock[];
 }
+
+type RegisterRef = (text: string, ref: View | null) => void;
 
 function stripDuplicateTrailingHeader(sanskrit: string): string {
   const words = sanskrit.trim().split(/\s+/);
@@ -50,6 +61,95 @@ function stripDuplicateTrailingHeader(sanskrit: string): string {
   return sanskrit;
 }
 
+// ---------- Universal Sanskrit-vs-English classifier ----------
+const SANSKRIT_DIACRITIC = /[āīūṛṝḷḹṃḥñṅṭḍṇśṣĀĪŪṚṜḶḸṂḤÑṄṬḌṆŚṢ]/;
+
+const ENGLISH_STOPWORDS = new Set([
+  "a", "an", "the", "of", "to", "in", "on", "at", "by", "for", "with", "and",
+  "or", "but", "is", "was", "were", "are", "be", "been", "being", "he", "she",
+  "it", "his", "her", "its", "who", "whom", "which", "that", "this", "these",
+  "those", "from", "as", "when", "while", "after", "before", "if", "because",
+  "so", "then", "than", "not", "no", "nor", "do", "did", "does", "has",
+  "have", "had", "will", "would", "can", "could", "should", "may", "might",
+  "must", "i", "we", "you", "they", "them", "their", "our", "your", "my",
+  "me", "him", "us", "one", "two", "three", "some", "any", "each", "every",
+  "other", "such", "very", "also", "just", "only", "more", "most", "much",
+  "many", "there", "here", "how", "what", "why", "said", "says", "say",
+  "went", "came", "saw", "took", "gave", "made", "began", "became",
+]);
+
+function tokenClass(token: string): "sanskrit" | "english" | "ambiguous" {
+  const clean = token.replace(/^[^a-zA-Z\u0080-\uFFFF']+|[.,!?;:"]+$/g, "");
+  if (!clean) return "ambiguous";
+  const lower = clean.toLowerCase();
+  if (ENGLISH_STOPWORDS.has(lower)) return "english";
+  const hasDiacritic = SANSKRIT_DIACRITIC.test(clean);
+  const isHyphenLower = clean.includes("-") && clean === clean.toLowerCase();
+  if (hasDiacritic || isHyphenLower) return "sanskrit";
+  return "ambiguous";
+}
+
+function parseUniversal(raw: string): UniversalBlock[] {
+  const tokens = raw.trim().split(/\s+/);
+  const classes = tokens.map(tokenClass);
+  const rawBlocks: { type: "sanskrit" | "prose"; text: string }[] = [];
+
+  let mode: "prose" | "sanskrit" = "prose";
+  let buf: string[] = [];
+
+  const flush = (type: "sanskrit" | "prose") => {
+    if (buf.length > 0) rawBlocks.push({ type, text: buf.join(" ") });
+    buf = [];
+  };
+
+  let i = 0;
+  while (i < tokens.length) {
+    if (mode === "prose") {
+      const window = classes.slice(i, i + 5);
+      const sanskritCount = window.filter((c) => c === "sanskrit").length;
+      const englishCount = window.filter((c) => c === "english").length;
+      if (sanskritCount >= 4 && englishCount === 0) {
+        flush("prose");
+        mode = "sanskrit";
+        continue;
+      }
+      buf.push(tokens[i]);
+      i++;
+    } else {
+      if (classes[i] === "english" && classes[i + 1] === "english") {
+        flush("sanskrit");
+        mode = "prose";
+        continue;
+      }
+      buf.push(tokens[i]);
+      i++;
+    }
+  }
+  flush(mode);
+
+  return rawBlocks.map((b, idx) => ({
+    type: b.type,
+    text: b.text,
+    isVerseTranslation: b.type === "prose" && idx > 0 && rawBlocks[idx - 1].type === "sanskrit",
+  }));
+}
+
+function splitTranslationPurport(text: string): { translation: string; purport: string } {
+  const questionIdx = text.indexOf("?");
+  if (questionIdx !== -1) {
+    return {
+      translation: text.slice(0, questionIdx + 1).trim(),
+      purport: text.slice(questionIdx + 1).trim(),
+    };
+  }
+  const sentenceMatches = text.match(/[^.!?]+[.!?]+/g);
+  if (sentenceMatches && sentenceMatches.length > 1) {
+    const translation = sentenceMatches.slice(0, 2).join(" ").trim();
+    return { translation, purport: text.slice(translation.length).trim() };
+  }
+  return { translation: text, purport: "" };
+}
+
 function parseContent(raw: string, verseTitle: string): ParsedVerse {
   let text = raw.trim();
 
@@ -57,67 +157,55 @@ function parseContent(raw: string, verseTitle: string): ParsedVerse {
     text = text.slice(verseTitle.length).trim();
   } else {
     const autoTitle = text.match(
-      /^[A-Za-z\-ĀīūṛṇśṣṭḍṇḥÀ-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
+      /^[A-Za-z\-Ā ī ū ṛ ṇ ś ṣ ṭ ḍ ṇ ḥ À-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
     );
     if (autoTitle) text = text.slice(autoTitle[0].length).trim();
   }
 
   const firstDash = text.indexOf(" — ");
-  if (firstDash === -1) {
-    return {
-      title: verseTitle,
-      sanskrit: stripDuplicateTrailingHeader(text),
-      synonyms: [],
-      translation: "",
-      purport: "",
-    };
-  }
 
-  const sanskrit = stripDuplicateTrailingHeader(text.slice(0, firstDash).trim());
-  const fromSynonyms = text.slice(firstDash);
-  const synonymEndRegex = /\s\.\s([A-ZĀĪŪṚŚṢṬḌṆ])/g;
-  let synonymEndIdx = -1;
-  let match;
-  const firstSemicolon = fromSynonyms.indexOf(" ;");
-  if (firstSemicolon !== -1) {
-    synonymEndRegex.lastIndex = firstSemicolon;
-    match = synonymEndRegex.exec(fromSynonyms);
-    if (match) {
-      synonymEndIdx = match.index + match[0].length - 1;
+  if (firstDash !== -1) {
+    const sanskrit = stripDuplicateTrailingHeader(text.slice(0, firstDash).trim());
+    const fromSynonyms = text.slice(firstDash);
+    const synonymEndRegex = /\s\.\s([A-ZĀĪŪṚŚṢṬḌṆ])/g;
+    let synonymEndIdx = -1;
+    let match;
+    const firstSemicolon = fromSynonyms.indexOf(" ;");
+    if (firstSemicolon !== -1) {
+      synonymEndRegex.lastIndex = firstSemicolon;
+      match = synonymEndRegex.exec(fromSynonyms);
+      if (match) {
+        synonymEndIdx = match.index + match[0].length - 1;
+      }
     }
-  }
 
-  let synonymRaw = "";
-  let afterSynonyms = "";
+    let synonymRaw = "";
+    let afterSynonyms = "";
 
-  if (synonymEndIdx !== -1) {
-    synonymRaw = fromSynonyms.slice(0, synonymEndIdx).trim();
-    afterSynonyms = fromSynonyms.slice(synonymEndIdx).trim();
-  } else {
-    synonymRaw = fromSynonyms;
-    afterSynonyms = "";
-  }
-
-  const synonyms = parseSynonyms(synonymRaw);
-
-  let translation = "";
-  let purport = "";
-
-  const questionIdx = afterSynonyms.indexOf("?");
-  if (questionIdx !== -1) {
-    translation = afterSynonyms.slice(0, questionIdx + 1).trim();
-    purport = afterSynonyms.slice(questionIdx + 1).trim();
-  } else {
-    const sentenceMatches = afterSynonyms.match(/[^.!?]+[.!?]+/g);
-    if (sentenceMatches && sentenceMatches.length > 1) {
-      translation = sentenceMatches.slice(0, 2).join(" ").trim();
-      purport = afterSynonyms.slice(translation.length).trim();
+    if (synonymEndIdx !== -1) {
+      synonymRaw = fromSynonyms.slice(0, synonymEndIdx).trim();
+      afterSynonyms = fromSynonyms.slice(synonymEndIdx).trim();
     } else {
-      translation = afterSynonyms;
+      synonymRaw = fromSynonyms;
+      afterSynonyms = "";
+    }
+
+    const synonyms = parseSynonyms(synonymRaw);
+
+    if (synonyms.length > 0) {
+      const { translation, purport } = splitTranslationPurport(afterSynonyms);
+      return { title: verseTitle, sanskrit, synonyms, translation, purport };
     }
   }
 
-  return { title: verseTitle, sanskrit, synonyms, translation, purport };
+  return {
+    title: verseTitle,
+    sanskrit: "",
+    synonyms: [],
+    translation: "",
+    purport: "",
+    universalBlocks: parseUniversal(text),
+  };
 }
 
 function parseSynonyms(raw: string): SynonymEntry[] {
@@ -136,47 +224,169 @@ function parseSynonyms(raw: string): SynonymEntry[] {
   return entries;
 }
 
+// ---------- In-verse search ----------
+
+function getAllVerseText(parsed: ParsedVerse): string {
+  if (parsed.universalBlocks) {
+    return parsed.universalBlocks.map((b) => b.text).join(" ");
+  }
+  const synText = parsed.synonyms.map((s) => `${s.word} — ${s.meaning}`).join(" ; ");
+  return [parsed.sanskrit, synText, parsed.translation, parsed.purport]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getSuggestions(fullText: string, query: string): string[] {
+  const q = query.trim();
+  if (q.length < 3) return [];
+  const lower = q.normalize("NFC").toLowerCase();
+  const sentences = fullText.match(/[^.!?]+[.!?]?/g) || [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of sentences) {
+    const s = raw.trim();
+    if (!s) continue;
+    const sLower = s.normalize("NFC").toLowerCase();
+    if (!sLower.includes(lower)) continue;
+    const preview = s.length > 90 ? s.slice(0, 90) + "..." : s;
+    if (!seen.has(preview)) {
+      seen.add(preview);
+      result.push(preview);
+    }
+    if (result.length >= 6) break;
+  }
+  return result;
+}
+
+function HighlightedText({
+  text,
+  query,
+  style,
+}: {
+  text: string;
+  query: string;
+  style?: any;
+}) {
+  if (!query || query.trim().length < 2) {
+    return <Text style={style}>{text}</Text>;
+  }
+  const normText = text.normalize("NFC");
+  const lower = normText.toLowerCase();
+  const q = query.trim().normalize("NFC").toLowerCase();
+  const parts: { text: string; match: boolean }[] = [];
+  let i = 0;
+  while (i < normText.length) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) {
+      parts.push({ text: normText.slice(i), match: false });
+      break;
+    }
+    if (idx > i) parts.push({ text: normText.slice(i, idx), match: false });
+    parts.push({ text: normText.slice(idx, idx + q.length), match: true });
+    i = idx + q.length;
+  }
+  return (
+    <Text style={style}>
+      {parts.map((p, idx) =>
+        p.match ? (
+          <Text key={idx} style={{ backgroundColor: "#ffe066" }}>
+            {p.text}
+          </Text>
+        ) : (
+          <Text key={idx}>{p.text}</Text>
+        ),
+      )}
+    </Text>
+  );
+}
+
 function VerseTitle({
   title,
-  settings,
-  onToggle,
+  searchOpen,
+  onToggleSearch,
+  searchQuery,
+  onChangeSearch,
+  suggestions,
+  onSelectSuggestion,
 }: {
   title: string;
-  settings: DisplaySettings;
-  onToggle: (key: keyof DisplaySettings) => void;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+  searchQuery: string;
+  onChangeSearch: (t: string) => void;
+  suggestions: string[];
+  onSelectSuggestion: (s: string) => void;
 }) {
   return (
-    <View
-      style={{
-        backgroundColor: "#f5e6c8",
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        borderBottomWidth: 1,
-        borderBottomColor: "#e8d9b5",
-      }}
-    >
-      <Text
+    <View>
+      <View
         style={{
-          fontSize: 12,
-          fontWeight: "700",
-          color: "#8B0000",
-          letterSpacing: 1.2,
-          textTransform: "uppercase",
-          flex: 1,
-          marginRight: 8,
+          backgroundColor: "#f5e6c8",
+          paddingHorizontal: 20,
+          paddingVertical: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderBottomWidth: 1,
+          borderBottomColor: "#e8d9b5",
         }}
       >
-        {title}
-      </Text>
-      <AdvancedSelector settings={settings} onToggle={onToggle} />
+        {searchOpen ? (
+          <TextInput
+            value={searchQuery}
+            onChangeText={onChangeSearch}
+            placeholder="Search in this verse..."
+            placeholderTextColor="#a8886a"
+            autoFocus
+            style={{ flex: 1, fontSize: 14, color: "#1a1a1a", paddingVertical: 2, marginRight: 8 }}
+          />
+        ) : (
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: "700",
+              color: "#8B0000",
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              flex: 1,
+              marginRight: 8,
+            }}
+          >
+            {title}
+          </Text>
+        )}
+
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TouchableOpacity onPress={onToggleSearch} style={{ marginRight: 12 }}>
+            <Text style={{ fontSize: 18 }}>🔍</Text>
+          </TouchableOpacity>
+          <AdvancedSelector />
+        </View>
+      </View>
+
+      {searchOpen && suggestions.length > 0 ? (
+        <View style={{ backgroundColor: "#fff", borderBottomWidth: 1, borderColor: "#e8d9b5" }}>
+          {suggestions.map((s, i) => (
+            <TouchableOpacity
+              key={i}
+              onPress={() => onSelectSuggestion(s)}
+              style={{
+                paddingHorizontal: 20,
+                paddingVertical: 10,
+                borderBottomWidth: i < suggestions.length - 1 ? 1 : 0,
+                borderColor: "#f0f0f0",
+              }}
+            >
+              <Text style={{ fontSize: 13, color: "#1a1a1a" }}>{s}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function SanskritBlock({ text }: { text: string }) {
+function SanskritBlock({ text, query = "" }: { text: string; query?: string }) {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   for (let i = 0; i < words.length; i += 5) {
@@ -194,8 +404,10 @@ function SanskritBlock({ text }: { text: string }) {
       }}
     >
       {lines.map((line, i) => (
-        <Text
+        <HighlightedText
           key={i}
+          text={line}
+          query={query}
           style={{
             fontStyle: "italic",
             fontWeight: "bold",
@@ -204,9 +416,7 @@ function SanskritBlock({ text }: { text: string }) {
             textAlign: "center",
             lineHeight: 30,
           }}
-        >
-          {line}
-        </Text>
+        />
       ))}
     </View>
   );
@@ -238,7 +448,7 @@ function SectionLabel({ label }: { label: string }) {
   );
 }
 
-function SynonymsBlock({ entries }: { entries: SynonymEntry[] }) {
+function SynonymsBlock({ entries, query = "" }: { entries: SynonymEntry[]; query?: string }) {
   if (entries.length === 0) return null;
   return (
     <View>
@@ -250,7 +460,7 @@ function SynonymsBlock({ entries }: { entries: SynonymEntry[] }) {
               {entry.word}
             </Text>
             <Text style={{ color: "#666" }}>{" — "}</Text>
-            <Text style={{ color: "#1a1a1a" }}>{entry.meaning}</Text>
+            <HighlightedText text={entry.meaning} query={query} style={{ color: "#1a1a1a" }} />
             {i < entries.length - 1 ? (
               <Text style={{ color: "#888" }}>{" ; "}</Text>
             ) : (
@@ -263,12 +473,22 @@ function SynonymsBlock({ entries }: { entries: SynonymEntry[] }) {
   );
 }
 
-function TranslationBlock({ text }: { text: string }) {
+function TranslationBlock({
+  text,
+  query = "",
+  registerRef,
+}: {
+  text: string;
+  query?: string;
+  registerRef?: RegisterRef;
+}) {
   if (!text) return null;
   return (
-    <View>
+    <View ref={registerRef ? (r) => registerRef(text, r) : undefined}>
       <SectionLabel label="Translation" />
-      <Text
+      <HighlightedText
+        text={text}
+        query={query}
         style={{
           fontSize: 16,
           lineHeight: 28,
@@ -276,14 +496,20 @@ function TranslationBlock({ text }: { text: string }) {
           fontStyle: "italic",
           fontWeight: "bold",
         }}
-      >
-        {text}
-      </Text>
+      />
     </View>
   );
 }
 
-function PurportBlock({ text }: { text: string }) {
+function PurportBlock({
+  text,
+  query = "",
+  registerRef,
+}: {
+  text: string;
+  query?: string;
+  registerRef?: RegisterRef;
+}) {
   if (!text) return null;
   const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
   const paragraphs: string[] = [];
@@ -295,41 +521,104 @@ function PurportBlock({ text }: { text: string }) {
     <View>
       <SectionLabel label="Purport" />
       {paragraphs.map((para, i) => (
-        <Text
-          key={i}
-          style={{
-            fontSize: 15,
-            lineHeight: 27,
-            color: "#1a1a1a",
-            marginBottom: 16,
-            textAlign: "justify",
-          }}
-        >
-          {para}
-        </Text>
+        <View key={i} ref={registerRef ? (r) => registerRef(para, r) : undefined}>
+          <HighlightedText
+            text={para}
+            query={query}
+            style={{
+              fontSize: 15,
+              lineHeight: 27,
+              color: "#1a1a1a",
+              marginBottom: 16,
+              textAlign: "justify",
+            }}
+          />
+        </View>
       ))}
+    </View>
+  );
+}
+
+function PlainParagraphs({
+  text,
+  query = "",
+  registerRef,
+}: {
+  text: string;
+  query?: string;
+  registerRef?: RegisterRef;
+}) {
+  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
+  const paragraphs: string[] = [];
+  const perPara = 4;
+  for (let i = 0; i < sentences.length; i += perPara) {
+    paragraphs.push(sentences.slice(i, i + perPara).join("").trim());
+  }
+  return (
+    <>
+      {paragraphs.map((para, i) => (
+        <View key={i} ref={registerRef ? (r) => registerRef(para, r) : undefined}>
+          <HighlightedText
+            text={para}
+            query={query}
+            style={{
+              fontSize: 16,
+              lineHeight: 28,
+              color: "#1a1a1a",
+              marginBottom: 16,
+              textAlign: "justify",
+            }}
+          />
+        </View>
+      ))}
+    </>
+  );
+}
+
+function UniversalView({
+  blocks,
+  query = "",
+  registerRef,
+}: {
+  blocks: UniversalBlock[];
+  query?: string;
+  registerRef?: RegisterRef;
+}) {
+  return (
+    <View>
+      {blocks.map((block, i) => {
+        if (block.type === "sanskrit") {
+          return <SanskritBlock key={i} text={block.text} query={query} />;
+        }
+        if (block.isVerseTranslation) {
+          const { translation, purport } = splitTranslationPurport(block.text);
+          return (
+            <View key={i}>
+              <TranslationBlock text={translation} query={query} registerRef={registerRef} />
+              <PurportBlock text={purport} query={query} registerRef={registerRef} />
+            </View>
+          );
+        }
+        return <PlainParagraphs key={i} text={block.text} query={query} registerRef={registerRef} />;
+      })}
     </View>
   );
 }
 
 export default function VerseScreen({ route, navigation }: any) {
   const db = useDatabase();
+  const { settings } = useDisplaySettings();
   const { divisionId, divisionName } = route.params;
   const [verse, setVerse] = useState<Verse | null>(null);
   const [loading, setLoading] = useState(true);
   const [bookmarked, setBookmarked] = useState(false);
   const [siblings, setSiblings] = useState<Division[]>([]);
-  const [settings, setSettings] = useState<DisplaySettings>({
-    mantra: true,
-    synonyms: true,
-    translation: true,
-    purport: true,
-  });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const touchStart = useRef({ x: 0, y: 0 });
-
-  const toggleSetting = (key: keyof DisplaySettings) => {
-    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const paragraphRefs = useRef<{ text: string; ref: View }[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -342,6 +631,8 @@ export default function VerseScreen({ route, navigation }: any) {
 
     isBookmarked(db, divisionId).then(setBookmarked);
     getSiblingDivisions(db, divisionId).then(setSiblings);
+    setSearchOpen(false);
+    setSearchQuery("");
   }, [divisionId]);
 
   const toggleBookmark = useCallback(async () => {
@@ -380,10 +671,7 @@ export default function VerseScreen({ route, navigation }: any) {
       : null;
 
   const handleTouchStart = (e: any) => {
-    touchStart.current = {
-      x: e.nativeEvent.pageX,
-      y: e.nativeEvent.pageY,
-    };
+    touchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
   };
 
   const handleTouchEnd = (e: any) => {
@@ -405,6 +693,36 @@ export default function VerseScreen({ route, navigation }: any) {
     }
   };
 
+  const registerParagraphRef: RegisterRef = (text, ref) => {
+    if (!ref) return;
+    const existing = paragraphRefs.current.find((p) => p.text === text);
+    if (!existing) {
+      paragraphRefs.current.push({ text, ref });
+    } else {
+      existing.ref = ref;
+    }
+  };
+
+  const scrollToMatch = (sentence: string) => {
+    const clean = sentence.replace(/\.\.\.$/, "").trim();
+    const cleanLower = clean.toLowerCase();
+    const target = paragraphRefs.current.find((p) =>
+      p.text.toLowerCase().includes(cleanLower.slice(0, 40)),
+    );
+    if (target && target.ref && scrollRef.current) {
+      target.ref.measure((x, y, width, height, pageX, pageY) => {
+        const targetScrollY = scrollYRef.current + pageY - 140;
+        scrollRef.current?.scrollTo({ y: Math.max(0, targetScrollY), animated: true });
+      });
+    }
+  };
+
+  const handleSelectSuggestion = (s: string) => {
+    const clean = s.replace(/\.\.\.$/, "");
+    setSearchQuery(clean);
+    setTimeout(() => scrollToMatch(clean), 150);
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -422,23 +740,65 @@ export default function VerseScreen({ route, navigation }: any) {
   }
 
   const parsed = parseContent(verse.content, verse.title ?? divisionName);
+  const allVerseText = getAllVerseText(parsed);
+  const suggestions = getSuggestions(allVerseText, searchQuery);
+
+  paragraphRefs.current = [];
 
   return (
-    <View
-      style={{ flex: 1 }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
+    <View style={{ flex: 1 }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <ScrollView
+        ref={scrollRef}
         style={{ backgroundColor: "#fdf6e3" }}
         contentContainerStyle={{ paddingBottom: 52 }}
+        onScroll={(e) => {
+          scrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
       >
-        <VerseTitle title={parsed.title} settings={settings} onToggle={toggleSetting} />
+        <VerseTitle
+          title={parsed.title}
+          searchOpen={searchOpen}
+          onToggleSearch={() => {
+            setSearchOpen((o) => !o);
+            setSearchQuery("");
+          }}
+          searchQuery={searchQuery}
+          onChangeSearch={setSearchQuery}
+          suggestions={suggestions}
+          onSelectSuggestion={handleSelectSuggestion}
+        />
         <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
-          {settings.mantra && parsed.sanskrit ? <SanskritBlock text={parsed.sanskrit} /> : null}
-          {settings.synonyms ? <SynonymsBlock entries={parsed.synonyms} /> : null}
-          {settings.translation ? <TranslationBlock text={parsed.translation} /> : null}
-          {settings.purport ? <PurportBlock text={parsed.purport} /> : null}
+          {parsed.universalBlocks ? (
+            <UniversalView
+              blocks={parsed.universalBlocks}
+              query={searchQuery}
+              registerRef={registerParagraphRef}
+            />
+          ) : (
+            <>
+              {settings.mantra && parsed.sanskrit ? (
+                <SanskritBlock text={parsed.sanskrit} query={searchQuery} />
+              ) : null}
+              {settings.synonyms ? (
+                <SynonymsBlock entries={parsed.synonyms} query={searchQuery} />
+              ) : null}
+              {settings.translation ? (
+                <TranslationBlock
+                  text={parsed.translation}
+                  query={searchQuery}
+                  registerRef={registerParagraphRef}
+                />
+              ) : null}
+              {settings.purport ? (
+                <PurportBlock
+                  text={parsed.purport}
+                  query={searchQuery}
+                  registerRef={registerParagraphRef}
+                />
+              ) : null}
+            </>
+          )}
         </View>
       </ScrollView>
     </View>

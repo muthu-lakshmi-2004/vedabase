@@ -55,7 +55,7 @@ export default function BookListScreen({ navigation }: any) {
         >
           <Image
             source={imageMap[item.image]}
-            style={{ width: 90, height: 90, marginBottom: 10 }}
+            style={{ width: 150, height: 170, marginBottom: 10 }}
             resizeMode="contain"
           />
           <Text

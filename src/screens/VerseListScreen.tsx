@@ -53,6 +53,25 @@ export default function VerseListScreen({ route, navigation }: any) {
       .finally(() => setLoading(false));
   }, [divisionId]);
 
+  const handlePress = async (item: Division) => {
+    // Check if this item itself has further children (e.g. a chapter that
+    // contains individual verses, instead of being a verse leaf itself).
+    // If so, drill down into another list instead of showing its own
+    // (possibly aggregated/incorrect) content directly.
+    const children = await getVerseListByDivision(db, item.id);
+    if (children.length > 0) {
+      navigation.push("VerseList", {
+        divisionId: item.id,
+        divisionName: item.name,
+      });
+    } else {
+      navigation.navigate("Verse", {
+        divisionId: item.id,
+        divisionName: item.name,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -66,14 +85,9 @@ export default function VerseListScreen({ route, navigation }: any) {
       data={verses}
       keyExtractor={(item) => item.id.toString()}
       contentContainerStyle={{ paddingVertical: 8, backgroundColor: "#fdf6e3" }}
-      renderItem={({ item, index }) => (
+      renderItem={({ item }) => (
         <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("Verse", {
-              divisionId: item.id,
-              divisionName: divisionName,
-            })
-          }
+          onPress={() => handlePress(item)}
           style={{
             paddingHorizontal: 16,
             paddingVertical: 14,
@@ -82,7 +96,6 @@ export default function VerseListScreen({ route, navigation }: any) {
             backgroundColor: "#fdf6e3",
           }}
         >
-          {/* ✅ TEXT 1: red bold */}
           <Text
             style={{
               color: "#8B0000",
@@ -91,7 +104,7 @@ export default function VerseListScreen({ route, navigation }: any) {
               marginBottom: 4,
             }}
           >
-            TEXT {index + 1}:
+            {item.name}:
           </Text>
           <Text style={{ fontSize: 15, color: "#1a1a1a", lineHeight: 22 }}>
             {verseContents[item.id] || "Loading..."}

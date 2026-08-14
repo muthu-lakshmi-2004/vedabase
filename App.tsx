@@ -1,54 +1,19 @@
 import { useEffect, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { openDatabase } from "./src/database/db";
 import { SQLiteDatabase } from "expo-sqlite";
-import { View, ActivityIndicator, Text } from "react-native";
+import { View, ActivityIndicator, Text, TouchableOpacity } from "react-native";
 import { DatabaseProvider } from "./src/context/DatabaseContext";
 import { DisplaySettingsProvider } from "./src/context/DisplaySettingsContext";
 import BookListScreen from "./src/screens/BookListScreen";
 import BookIndexScreen from "./src/screens/Bookindexscreen";
 import VerseListScreen from "./src/screens/VerseListScreen";
 import VerseScreen from "./src/screens/VerseScreen";
-import BookmarksScreen from "./src/screens/BookmarksScreen";
+import BookBookmarksScreen from "./src/screens/BookmarksScreen";
 import NotesScreen from "./src/screens/NotesScreen";
 
-const BooksStackNav = createNativeStackNavigator();
-const SavedStackNav = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
-
-function BooksStack() {
-  return (
-    <BooksStackNav.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: "#8B0000" },
-        headerTintColor: "#fff",
-      }}
-    >
-      <BooksStackNav.Screen name="BookList" component={BookListScreen} options={{ title: "Vedabase" }} />
-      <BooksStackNav.Screen name="BookIndex" component={BookIndexScreen} options={({ route }: any) => ({ title: route.params.bookName })} />
-      <BooksStackNav.Screen name="VerseList" component={VerseListScreen} options={({ route }: any) => ({ title: route.params.divisionName })} />
-      <BooksStackNav.Screen name="Verse" component={VerseScreen} options={({ route }: any) => ({ title: route.params.divisionName })} />
-      <BooksStackNav.Screen name="Notes" component={NotesScreen} options={{ title: "Notes" }} />
-    </BooksStackNav.Navigator>
-  );
-}
-
-function SavedStack() {
-  return (
-    <SavedStackNav.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: "#8B0000" },
-        headerTintColor: "#fff",
-      }}
-    >
-      <SavedStackNav.Screen name="Bookmarks" component={BookmarksScreen} options={{ title: "Saved" }} />
-      <SavedStackNav.Screen name="Verse" component={VerseScreen} options={({ route }: any) => ({ title: route.params.divisionName })} />
-      <SavedStackNav.Screen name="Notes" component={NotesScreen} options={{ title: "Notes" }} />
-    </SavedStackNav.Navigator>
-  );
-}
+const RootStackNav = createNativeStackNavigator();
 
 export default function App() {
   const [db, setDb] = useState<SQLiteDatabase | null>(null);
@@ -84,29 +49,57 @@ export default function App() {
     <DatabaseProvider value={db}>
       <DisplaySettingsProvider>
         <NavigationContainer>
-          <Tab.Navigator
+          <RootStackNav.Navigator
             screenOptions={{
-              headerShown: false,
-              tabBarActiveTintColor: "#8B0000",
+              headerStyle: { backgroundColor: "#8B0000" },
+              headerTintColor: "#fff",
             }}
           >
-            <Tab.Screen
-              name="VedabaseTab"
-              component={BooksStack}
-              options={{
-                title: "Vedabase",
-                tabBarIcon: ({ color, size }) => <Text style={{ color, fontSize: size }}>📚</Text>,
-              }}
+            <RootStackNav.Screen
+              name="BookList"
+              component={BookListScreen}
+              options={{ title: "Vedabase" }}
             />
-            <Tab.Screen
-              name="SavedTab"
-              component={SavedStack}
-              options={{
-                title: "Saved",
-                tabBarIcon: ({ color, size }) => <Text style={{ color, fontSize: size }}>★</Text>,
-              }}
+            <RootStackNav.Screen
+              name="BookIndex"
+              component={BookIndexScreen}
+              options={({ route, navigation }: any) => ({
+                title: route.params.bookName,
+                headerRight: () => (
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate("BookBookmarks", {
+                        bookId: route.params.bookId,
+                        bookName: route.params.bookName,
+                      })
+                    }
+                  >
+                    <Text style={{ color: "#fff", fontSize: 20 }}>★</Text>
+                  </TouchableOpacity>
+                ),
+              })}
             />
-          </Tab.Navigator>
+            <RootStackNav.Screen
+              name="VerseList"
+              component={VerseListScreen}
+              options={({ route }: any) => ({ title: route.params.divisionName })}
+            />
+            <RootStackNav.Screen
+              name="Verse"
+              component={VerseScreen}
+              options={({ route }: any) => ({ title: route.params.divisionName })}
+            />
+            <RootStackNav.Screen
+              name="Notes"
+              component={NotesScreen}
+              options={{ title: "Notes" }}
+            />
+            <RootStackNav.Screen
+              name="BookBookmarks"
+              component={BookBookmarksScreen}
+              options={({ route }: any) => ({ title: `${route.params.bookName} Bookmarks` })}
+            />
+          </RootStackNav.Navigator>
         </NavigationContainer>
       </DisplaySettingsProvider>
     </DatabaseProvider>
