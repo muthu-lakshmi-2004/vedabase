@@ -11,9 +11,14 @@ import { getDivisionsByBook, getVerseListByDivision } from "../api/division";
 import { useDatabase } from "../context/DatabaseContext";
 import { Division } from "../types";
 
+function extractNumber(name: string): string {
+  const match = name.match(/(\d+(?:-\d+)?)/);
+  return match ? match[1] : name;
+}
+
 export default function BookIndexScreen({ route, navigation }: any) {
   const db = useDatabase();
-  const { bookId } = route.params;
+  const { bookId, bookName } = route.params;
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -23,6 +28,25 @@ export default function BookIndexScreen({ route, navigation }: any) {
       .finally(() => setLoading(false));
   }, [bookId]);
 
+  const handlePress = async (item: Division) => {
+    const children = await getVerseListByDivision(db, item.id);
+    if (children.length > 0) {
+      navigation.navigate("VerseList", {
+        divisionId: item.id,
+        divisionName: item.name,
+        bookName,
+        chapterNumber: extractNumber(item.name),
+      });
+    } else {
+      navigation.navigate("Verse", {
+        divisionId: item.id,
+        divisionName: item.name,
+        bookName,
+        chapterNumber: "",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -30,21 +54,6 @@ export default function BookIndexScreen({ route, navigation }: any) {
       </View>
     );
   }
-
-  const handlePress = async (item: Division) => {
-    const children = await getVerseListByDivision(db, item.id);
-    if (children.length > 0) {
-      navigation.navigate("VerseList", {
-        divisionId: item.id,
-        divisionName: item.name,
-      });
-    } else {
-      navigation.navigate("Verse", {
-        divisionId: item.id,
-        divisionName: item.name,
-      });
-    }
-  };
 
   return (
     <FlatList

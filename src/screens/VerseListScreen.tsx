@@ -11,7 +11,6 @@ import { getVerseListByDivision } from "../api/division";
 import { useDatabase } from "../context/DatabaseContext";
 import { Division } from "../types";
 
-
 function getFirstSentence(content: string): string {
   const cleaned = content
     .replace(/^Bhagavad-gita As It Is[^.]*\n?/i, "")
@@ -27,9 +26,21 @@ function getFirstSentence(content: string): string {
   return cleaned.substring(0, 100) + "...";
 }
 
+function getShortLabel(name: string): string {
+  const match = name.match(/(\d+(?:-\d+)?)\s*$/);
+  if (match) return `Verse ${match[1]}`;
+  if (/summary/i.test(name)) return "Summary";
+  return name;
+}
+
+function getVerseNumber(name: string): string {
+  const match = name.match(/(\d+(?:-\d+)?)\s*$/);
+  return match ? match[1] : name;
+}
+
 export default function VerseListScreen({ route, navigation }: any) {
   const db = useDatabase();
-  const { divisionId, divisionName } = route.params;
+  const { divisionId, bookName, chapterNumber } = route.params;
   const [verses, setVerses] = useState<Division[]>([]);
   const [verseContents, setVerseContents] = useState<Record<number, string>>(
     {},
@@ -54,20 +65,21 @@ export default function VerseListScreen({ route, navigation }: any) {
   }, [divisionId]);
 
   const handlePress = async (item: Division) => {
-    // Check if this item itself has further children (e.g. a chapter that
-    // contains individual verses, instead of being a verse leaf itself).
-    // If so, drill down into another list instead of showing its own
-    // (possibly aggregated/incorrect) content directly.
     const children = await getVerseListByDivision(db, item.id);
     if (children.length > 0) {
       navigation.push("VerseList", {
         divisionId: item.id,
         divisionName: item.name,
+        bookName,
+        chapterNumber,
       });
     } else {
       navigation.navigate("Verse", {
         divisionId: item.id,
-        divisionName: item.name,
+        divisionName: getShortLabel(item.name),
+        bookName,
+        chapterNumber,
+        verseNumber: getVerseNumber(item.name),
       });
     }
   };
@@ -104,7 +116,7 @@ export default function VerseListScreen({ route, navigation }: any) {
               marginBottom: 4,
             }}
           >
-            {item.name}:
+            {getShortLabel(item.name)}
           </Text>
           <Text style={{ fontSize: 15, color: "#1a1a1a", lineHeight: 22 }}>
             {verseContents[item.id] || "Loading..."}

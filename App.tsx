@@ -10,10 +10,31 @@ import BookListScreen from "./src/screens/BookListScreen";
 import BookIndexScreen from "./src/screens/Bookindexscreen";
 import VerseListScreen from "./src/screens/VerseListScreen";
 import VerseScreen from "./src/screens/VerseScreen";
-import BookBookmarksScreen from "./src/screens/BookmarksScreen";
+import BookBookmarksScreen from "./src/screens/BookBookmarksScreen";
 import NotesScreen from "./src/screens/NotesScreen";
 
-const RootStackNav = createNativeStackNavigator();
+export type RootStackParamList = {
+  BookList: undefined;
+  BookIndex: { bookId: number; bookName: string };
+  Division: { bookId: number };
+  VerseList: {
+    divisionId: number;
+    divisionName: string;
+    bookName?: string;
+    chapterNumber?: string;
+  };
+  Verse: {
+    divisionId: number;
+    divisionName: string;
+    bookName?: string;
+    chapterNumber?: string;
+    verseNumber?: string;
+  };
+  Notes: { divisionId: number; divisionName: string };
+  BookBookmarks: { bookId: number; bookName: string };
+};
+
+const RootStackNav = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   const [db, setDb] = useState<SQLiteDatabase | null>(null);
@@ -87,7 +108,20 @@ export default function App() {
             <RootStackNav.Screen
               name="Verse"
               component={VerseScreen}
-              options={({ route }: any) => ({ title: route.params.divisionName })}
+              options={({ route }: any) => {
+                const { bookName, chapterNumber, verseNumber, divisionName } = route.params;
+                let title = bookName ?? divisionName;
+                if (bookName && chapterNumber && verseNumber) {
+                  title = `${bookName} ${chapterNumber}.${verseNumber}`;
+                } else if (bookName && verseNumber) {
+                  title = `${bookName} ${verseNumber}`;
+                } else if (bookName && chapterNumber) {
+                  title = `${bookName} ${chapterNumber}`;
+                } else if (bookName) {
+                  title = `${bookName} — ${divisionName}`;
+                }
+                return { title };
+              }}
             />
             <RootStackNav.Screen
               name="Notes"

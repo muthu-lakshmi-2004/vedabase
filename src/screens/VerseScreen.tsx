@@ -61,7 +61,6 @@ function stripDuplicateTrailingHeader(sanskrit: string): string {
   return sanskrit;
 }
 
-// ---------- Universal Sanskrit-vs-English classifier ----------
 const SANSKRIT_DIACRITIC = /[āīūṛṝḷḹṃḥñṅṭḍṇśṣĀĪŪṚṜḶḸṂḤÑṄṬḌṆŚṢ]/;
 
 const ENGLISH_STOPWORDS = new Set([
@@ -223,8 +222,6 @@ function parseSynonyms(raw: string): SynonymEntry[] {
   }
   return entries;
 }
-
-// ---------- In-verse search ----------
 
 function getAllVerseText(parsed: ParsedVerse): string {
   if (parsed.universalBlocks) {
@@ -484,7 +481,11 @@ function TranslationBlock({
 }) {
   if (!text) return null;
   return (
-    <View ref={registerRef ? (r) => registerRef(text, r) : undefined}>
+    <View
+      ref={(r) => {
+        if (r) registerRef?.(text, r);
+      }}
+    >
       <SectionLabel label="Translation" />
       <HighlightedText
         text={text}
@@ -521,7 +522,12 @@ function PurportBlock({
     <View>
       <SectionLabel label="Purport" />
       {paragraphs.map((para, i) => (
-        <View key={i} ref={registerRef ? (r) => registerRef(para, r) : undefined}>
+        <View
+          key={i}
+          ref={(r) => {
+            if (r) registerRef?.(para, r);
+          }}
+        >
           <HighlightedText
             text={para}
             query={query}
@@ -557,7 +563,12 @@ function PlainParagraphs({
   return (
     <>
       {paragraphs.map((para, i) => (
-        <View key={i} ref={registerRef ? (r) => registerRef(para, r) : undefined}>
+        <View
+          key={i}
+          ref={(r) => {
+            if (r) registerRef?.(para, r);
+          }}
+        >
           <HighlightedText
             text={para}
             query={query}
@@ -608,7 +619,7 @@ function UniversalView({
 export default function VerseScreen({ route, navigation }: any) {
   const db = useDatabase();
   const { settings } = useDisplaySettings();
-  const { divisionId, divisionName } = route.params;
+  const { divisionId, divisionName, highlightQuery } = route.params;
   const [verse, setVerse] = useState<Verse | null>(null);
   const [loading, setLoading] = useState(true);
   const [bookmarked, setBookmarked] = useState(false);
@@ -631,8 +642,8 @@ export default function VerseScreen({ route, navigation }: any) {
 
     isBookmarked(db, divisionId).then(setBookmarked);
     getSiblingDivisions(db, divisionId).then(setSiblings);
-    setSearchOpen(false);
-    setSearchQuery("");
+    setSearchOpen(!!highlightQuery);
+    setSearchQuery(highlightQuery || "");
   }, [divisionId]);
 
   const toggleBookmark = useCallback(async () => {
@@ -703,12 +714,10 @@ export default function VerseScreen({ route, navigation }: any) {
     }
   };
 
-  const scrollToMatch = (sentence: string) => {
-    const clean = sentence.replace(/\.\.\.$/, "").trim();
-    const cleanLower = clean.toLowerCase();
-    const target = paragraphRefs.current.find((p) =>
-      p.text.toLowerCase().includes(cleanLower.slice(0, 40)),
-    );
+  const scrollToMatch = (query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return;
+    const target = paragraphRefs.current.find((p) => p.text.toLowerCase().includes(q));
     if (target && target.ref && scrollRef.current) {
       target.ref.measure((x, y, width, height, pageX, pageY) => {
         const targetScrollY = scrollYRef.current + pageY - 140;
@@ -722,6 +731,12 @@ export default function VerseScreen({ route, navigation }: any) {
     setSearchQuery(clean);
     setTimeout(() => scrollToMatch(clean), 150);
   };
+
+  useEffect(() => {
+    if (highlightQuery && verse) {
+      setTimeout(() => scrollToMatch(highlightQuery), 300);
+    }
+  }, [verse, highlightQuery]);
 
   if (loading) {
     return (
