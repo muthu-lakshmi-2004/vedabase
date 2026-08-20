@@ -56,3 +56,40 @@ export async function getSiblingDivisions(
     [current.parent_id],
   );
 }
+export async function getNextChapterStart(
+  db: SQLiteDatabase,
+  divisionId: number,
+): Promise<{ divisionId: number; chapterName: string } | null> {
+  const current = await db.getFirstAsync<{ id: number; parent_id: number | null }>(
+    `SELECT id, parent_id FROM divisions WHERE id = ?`,
+    [divisionId],
+  );
+  if (!current || !current.parent_id) return null;
+
+  const parent = await db.getFirstAsync<{
+    id: number;
+    parent_id: number | null;
+    sequence: number;
+  }>(`SELECT id, parent_id, sequence FROM divisions WHERE id = ?`, [current.parent_id]);
+  if (!parent || !parent.parent_id) return null;
+
+  const nextChapter = await db.getFirstAsync<{ id: number; name: string }>(
+    `SELECT id, name FROM divisions WHERE parent_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1`,
+    [parent.parent_id, parent.sequence],
+  );
+  if (!nextChapter) return null;
+
+  // Drill down to the first actual leaf verse under the next chapter
+  // (handles nested structures like CC: chapter -> summary/verses)
+  let nodeId = nextChapter.id;
+  for (let depth = 0; depth < 6; depth++) {
+    const children = await db.getAllAsync<{ id: number }>(
+      `SELECT id FROM divisions WHERE parent_id = ? ORDER BY sequence ASC LIMIT 1`,
+      [nodeId],
+    );
+    if (children.length === 0) break;
+    nodeId = children[0].id;
+  }
+
+  return { divisionId: nodeId, chapterName: nextChapter.name };
+}

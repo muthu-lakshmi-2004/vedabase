@@ -11,7 +11,7 @@ import {
 import { useDatabase } from "../context/DatabaseContext";
 import { useDisplaySettings } from "../context/DisplaySettingsContext";
 import { Verse, Division } from "../types";
-import { getSiblingDivisions } from "../api/division";
+import { getSiblingDivisions, getNextChapterStart } from "../api/division";
 import { isBookmarked, addBookmark, removeBookmark } from "../api/bookmark";
 import AdvancedSelector from "../components/AdvancedSelector";
 
@@ -626,6 +626,8 @@ export default function VerseScreen({ route, navigation }: any) {
   const [siblings, setSiblings] = useState<Division[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [nextChapter, setNextChapter] = useState<{ divisionId: number; chapterName: string } | null>(null);
+  const [showChapterToast, setShowChapterToast] = useState(false);
   const touchStart = useRef({ x: 0, y: 0 });
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
@@ -644,7 +646,26 @@ export default function VerseScreen({ route, navigation }: any) {
     getSiblingDivisions(db, divisionId).then(setSiblings);
     setSearchOpen(!!highlightQuery);
     setSearchQuery(highlightQuery || "");
+    setNextChapter(null);
+
+    if (route.params.justEnteredChapter) {
+      setShowChapterToast(true);
+      const timer = setTimeout(() => setShowChapterToast(false), 1800);
+      return () => clearTimeout(timer);
+    } else {
+      setShowChapterToast(false);
+    }
   }, [divisionId]);
+
+  useEffect(() => {
+    const idx = siblings.findIndex((s) => s.id === divisionId);
+    const isLast = idx !== -1 && idx === siblings.length - 1;
+    if (isLast) {
+      getNextChapterStart(db, divisionId).then(setNextChapter);
+    } else {
+      setNextChapter(null);
+    }
+  }, [siblings, divisionId]);
 
   const toggleBookmark = useCallback(async () => {
     if (bookmarked) {
@@ -694,6 +715,15 @@ export default function VerseScreen({ route, navigation }: any) {
         navigation.replace("Verse", {
           divisionId: nextDivision.id,
           divisionName: nextDivision.name,
+        });
+      } else if (dx < 0 && !nextDivision && nextChapter) {
+        navigation.replace("Verse", {
+          divisionId: nextChapter.divisionId,
+          divisionName: nextChapter.chapterName,
+          bookName: route.params.bookName,
+          chapterNumber: nextChapter.chapterName.match(/\d+/)?.[0] ?? "",
+          verseNumber: "1",
+          justEnteredChapter: true,
         });
       } else if (dx > 0 && prevDivision) {
         navigation.replace("Verse", {
@@ -762,6 +792,25 @@ export default function VerseScreen({ route, navigation }: any) {
 
   return (
     <View style={{ flex: 1 }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      {showChapterToast ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 16,
+            alignSelf: "center",
+            backgroundColor: "rgba(139,0,0,0.92)",
+            paddingHorizontal: 20,
+            paddingVertical: 10,
+            borderRadius: 20,
+            zIndex: 10,
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>
+            {`Chapter ${route.params.chapterNumber ?? ""}`}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         ref={scrollRef}
         style={{ backgroundColor: "#fdf6e3" }}
@@ -815,6 +864,36 @@ export default function VerseScreen({ route, navigation }: any) {
             </>
           )}
         </View>
+
+        {nextChapter ? (
+          <View style={{ paddingHorizontal: 20, marginTop: 30, marginBottom: 10 }}>
+            <Text style={{ fontSize: 14, color: "#8B0000", marginBottom: 6 }}>Next Chapter :</Text>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.replace("Verse", {
+                  divisionId: nextChapter.divisionId,
+                  divisionName: nextChapter.chapterName,
+                  bookName: route.params.bookName,
+                  chapterNumber: nextChapter.chapterName.match(/\d+/)?.[0] ?? "",
+                  verseNumber: "1",
+                  justEnteredChapter: true,
+                })
+              }
+            >
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontStyle: "italic",
+                  color: "#8B0000",
+                  textDecorationLine: "underline",
+                }}
+              >
+                {route.params.bookName ? `${route.params.bookName} ` : ""}
+                {nextChapter.chapterName}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );
