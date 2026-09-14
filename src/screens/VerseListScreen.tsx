@@ -11,15 +11,31 @@ import { getVerseListByDivision } from "../api/division";
 import { useDatabase } from "../context/DatabaseContext";
 import { Division } from "../types";
 
+function stripRepeatedHeaders(content: string): string {
+  let text = content;
+  const headerPattern = /^[A-ZĀ-Ż]{1,10}\s?(?:[A-Za-zĀ-ṣ]+\s)?[\d][\dA-Za-zĀ-ṣ.\-–]*\s*:\s*[^:]{0,150}?:\s*/;  let guard = 0;
+  while (headerPattern.test(text) && guard < 10) {
+    const before = text;
+    text = text.replace(headerPattern, "");
+    if (text === before) break;
+    guard++;
+  }
+  return text.trim();
+}
+
+function stripTitlePrefix(content: string): string {
+  const match = content.match(/^.{0,140}?(?:Verses?|Text)\s+[\dA-Za-zĀ-ṣ\-–]+\s+/);
+  let stripped = match ? content.slice(match[0].length) : content;
+  stripped = stripRepeatedHeaders(stripped);
+  return stripped;
+}
+
 function getFirstSentence(content: string): string {
-  const cleaned = content
-    .replace(/^Bhagavad-gita As It Is[^.]*\n?/i, "")
-    .replace(/^[\s.]+/, "")
-    .trim();
+  const cleaned = stripTitlePrefix(content).replace(/^[\s.:]+/, "").trim();
   const lines = cleaned.split(/\n/);
   for (const line of lines) {
-    const trimmed = line.replace(/^[\s.]+/, "").trim();
-    if (trimmed.length > 20 && /[A-Za-z]/.test(trimmed[0])) {
+    const trimmed = line.replace(/^[\s.:]+/, "").trim();
+    if (trimmed.length > 15 && /[A-Za-z]/.test(trimmed[0])) {
       return trimmed.length > 100 ? trimmed.substring(0, 100) + "..." : trimmed;
     }
   }

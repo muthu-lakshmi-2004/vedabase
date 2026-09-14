@@ -15,7 +15,11 @@ export interface Division {
 export interface Verse {
   id: number;
   division_id: number;
-  content: string;
+  content: string;              // kept for search.ts (LIKE queries + snippets)
   title: string | null;
+  mantra: string | null;        // Sanskrit/transliteration, \n-separated lines
+  synonyms: string | null;      // "word — meaning; word — meaning; ..."
+  translation: string | null;
+  purport: string | null;
   sequence: number;
 }

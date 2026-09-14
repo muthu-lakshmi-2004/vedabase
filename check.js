@@ -1,22 +1,24 @@
 const sqlite3 = require("better-sqlite3");
-const path = require("path");
-const db = sqlite3(path.join(__dirname, "assets", "database", "vedabase_new.db"));
+const db = sqlite3("assets/database/vedabase_new.db");
 
-function showRaw(bookId, label, divisionName) {
-  const row = db.prepare(
-    `SELECT v.content FROM verse v
-     JOIN divisions d ON d.id = v.division_id
-     WHERE d.book_id = ? AND d.name = ?
-     LIMIT 1`
-  ).get(bookId, divisionName);
-  console.log(`\n===== ${label} =====`);
-  if (!row) { console.log("NOT FOUND"); return; }
-  console.log(JSON.stringify(row.content).slice(0, 500));
+console.log("Books:", db.prepare("SELECT id, name FROM books ORDER BY id").all());
+
+// Find NBS book_id, then look at its chapter/verse structure
+const nbs = db.prepare("SELECT id FROM books WHERE name LIKE '%NBS%' OR name LIKE '%Narada%'").get();
+if (nbs) {
+  console.log("\nNBS book_id:", nbs.id);
+  const root = db.prepare("SELECT id FROM divisions WHERE book_id = ? AND parent_id IS NULL").get(nbs.id);
+  const chapters = db.prepare("SELECT id, name FROM divisions WHERE parent_id = ? ORDER BY sequence").all(root.id);
+  console.log("Chapters:", chapters);
+
+  if (chapters.length > 0) {
+    const verses = db.prepare("SELECT id, name FROM divisions WHERE parent_id = ? ORDER BY sequence").all(chapters[0].id);
+    console.log(`\nVerses under chapter "${chapters[0].name}":`, verses.map(v => v.name));
+    if (chapters.length > 1) {
+      const verses2 = db.prepare("SELECT id, name FROM divisions WHERE parent_id = ? ORDER BY sequence").all(chapters[1].id);
+      console.log(`\nVerses under chapter "${chapters[1].name}":`, verses2.map(v => v.name));
+    }
+  }
 }
-
-showRaw(1, "BG 1.1", "1");
-showRaw(9, "SB 1.1.1", "1");
-showRaw(2, "BS (chapter 1 first verse)", "1");
-showRaw(12, "TQK (first verse)", "1");
 
 db.close();

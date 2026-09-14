@@ -10,7 +10,7 @@ import {
 
 import { useDatabase } from "../context/DatabaseContext";
 import { useDisplaySettings } from "../context/DisplaySettingsContext";
-import { Verse, Division } from "../types";
+import { Division } from "../types";
 import { getSiblingDivisions, getNextChapterStart } from "../api/division";
 import { isBookmarked, addBookmark, removeBookmark } from "../api/bookmark";
 import AdvancedSelector from "../components/AdvancedSelector";
@@ -149,23 +149,34 @@ function splitTranslationPurport(text: string): { translation: string; purport: 
   return { translation: text, purport: "" };
 }
 
+// ---------- OLD fallback parser (used only for verses not yet migrated) ----------
+
 function parseContent(raw: string, verseTitle: string): ParsedVerse {
   let text = raw.trim();
 
   if (verseTitle && text.startsWith(verseTitle)) {
     text = text.slice(verseTitle.length).trim();
   } else {
-    const autoTitle = text.match(
-      /^[A-Za-z\-Ā ī ū ṛ ṇ ś ṣ ṭ ḍ ṇ ḥ À-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
-    );
-    if (autoTitle) text = text.slice(autoTitle[0].length).trim();
+    const titleStrip = text.match(/^.{0,150}?\b(?:Verses?|Texts?)\s+[\d\wāīūṛṝḷḹṃḥñṅṭḍṇśṣĀĪŪṚṜḶḸṂḤÑṄṬḌṆŚṢ\-–]+\s+/);
+    if (titleStrip) {
+      text = text.slice(titleStrip[0].length).trim();
+    } else {
+      const autoTitle = text.match(
+        /^[A-Za-z\-āīūṛṝḷḹṃḥñṅṭḍṇśṣĀĪŪṚṜḶḸṂḤÑṄṬḌṆŚṢÀ-ÿ ,]+(?:Chapter \d+)?(?:Verse [\d–-]+)?\s+/,
+      );
+      if (autoTitle) text = text.slice(autoTitle[0].length).trim();
+    }
   }
 
   const firstDash = text.indexOf(" — ");
 
   if (firstDash !== -1) {
-    const sanskrit = stripDuplicateTrailingHeader(text.slice(0, firstDash).trim());
-    const fromSynonyms = text.slice(firstDash);
+    const beforeDash = text.slice(0, firstDash).trim();
+    const beforeWords = beforeDash.split(/\s+/);
+    const firstSynonymWord = beforeWords.length > 0 ? beforeWords[beforeWords.length - 1] : "";
+    const sanskritRaw = beforeWords.slice(0, -1).join(" ").trim();
+    const fromSynonyms = firstSynonymWord + text.slice(firstDash);
+
     const synonymEndRegex = /\s\.\s([A-ZĀĪŪṚŚṢṬḌṆ])/g;
     let synonymEndIdx = -1;
     let match;
@@ -190,6 +201,7 @@ function parseContent(raw: string, verseTitle: string): ParsedVerse {
     }
 
     const synonyms = parseSynonyms(synonymRaw);
+    const sanskrit = stripDuplicateTrailingHeader(sanskritRaw);
 
     if (synonyms.length > 0) {
       const { translation, purport } = splitTranslationPurport(afterSynonyms);
@@ -221,6 +233,37 @@ function parseSynonyms(raw: string): SynonymEntry[] {
     }
   }
   return entries;
+}
+
+// ---------- NEW: prefer structured columns from migration, fallback to old parser ----------
+
+function parseContentFromVerse(verseRow: any, verseTitle: string): ParsedVerse {
+  const mantraText: string = verseRow.mantra_text || "";
+  const translationText: string = verseRow.translation_text || "";
+  const purportText: string = verseRow.purport_text || "";
+
+  const hasStructured =
+    mantraText.trim().length > 0 ||
+    translationText.trim().length > 0 ||
+    purportText.trim().length > 0;
+
+  if (hasStructured) {
+    let synonyms: SynonymEntry[] = [];
+    try {
+      synonyms = verseRow.synonyms_json ? JSON.parse(verseRow.synonyms_json) : [];
+    } catch {
+      synonyms = [];
+    }
+    return {
+      title: verseTitle,
+      sanskrit: mantraText,
+      synonyms,
+      translation: translationText,
+      purport: purportText,
+    };
+  }
+
+  return parseContent(verseRow.content, verseTitle);
 }
 
 function getAllVerseText(parsed: ParsedVerse): string {
@@ -384,18 +427,24 @@ function VerseTitle({
 }
 
 function SanskritBlock({ text, query = "" }: { text: string; query?: string }) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  for (let i = 0; i < words.length; i += 5) {
-    lines.push(words.slice(i, i + 5).join(" "));
+  const hasRealLines = text.includes("\n");
+  let lines: string[];
+  if (hasRealLines) {
+    lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  } else {
+    const words = text.split(/\s+/).filter(Boolean);
+    lines = [];
+    for (let i = 0; i < words.length; i += 5) {
+      lines.push(words.slice(i, i + 5).join(" "));
+    }
   }
 
   return (
     <View
       style={{
-        borderLeftWidth: 3,
-        borderLeftColor: "#8B0000",
-        paddingLeft: 16,
         paddingVertical: 10,
         marginBottom: 8,
       }}
@@ -512,11 +561,16 @@ function PurportBlock({
   registerRef?: RegisterRef;
 }) {
   if (!text) return null;
-  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
-  const paragraphs: string[] = [];
-  const perPara = 4;
-  for (let i = 0; i < sentences.length; i += perPara) {
-    paragraphs.push(sentences.slice(i, i + perPara).join("").trim());
+  let paragraphs: string[];
+  if (text.includes("\n\n")) {
+    paragraphs = text.split("\n\n").map((p) => p.trim()).filter(Boolean);
+  } else {
+    const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
+    paragraphs = [];
+    const perPara = 4;
+    for (let i = 0; i < sentences.length; i += perPara) {
+      paragraphs.push(sentences.slice(i, i + perPara).join("").trim());
+    }
   }
   return (
     <View>
@@ -620,7 +674,7 @@ export default function VerseScreen({ route, navigation }: any) {
   const db = useDatabase();
   const { settings } = useDisplaySettings();
   const { divisionId, divisionName, highlightQuery } = route.params;
-  const [verse, setVerse] = useState<Verse | null>(null);
+  const [verse, setVerse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [bookmarked, setBookmarked] = useState(false);
   const [siblings, setSiblings] = useState<Division[]>([]);
@@ -635,7 +689,7 @@ export default function VerseScreen({ route, navigation }: any) {
 
   useEffect(() => {
     setLoading(true);
-    db.getFirstAsync<Verse>(
+    db.getFirstAsync<any>(
       `SELECT * FROM verse WHERE division_id = ? LIMIT 1`,
       [divisionId],
     )
@@ -768,6 +822,37 @@ export default function VerseScreen({ route, navigation }: any) {
     }
   }, [verse, highlightQuery]);
 
+  const goToPrevVerse = () => {
+    if (prevDivision) {
+      navigation.replace("Verse", {
+        divisionId: prevDivision.id,
+        divisionName: prevDivision.name,
+        bookName: route.params.bookName,
+        chapterNumber: route.params.chapterNumber,
+      });
+    }
+  };
+
+  const goToNextVerse = () => {
+    if (nextDivision) {
+      navigation.replace("Verse", {
+        divisionId: nextDivision.id,
+        divisionName: nextDivision.name,
+        bookName: route.params.bookName,
+        chapterNumber: route.params.chapterNumber,
+      });
+    } else if (nextChapter) {
+      navigation.replace("Verse", {
+        divisionId: nextChapter.divisionId,
+        divisionName: nextChapter.chapterName,
+        bookName: route.params.bookName,
+        chapterNumber: nextChapter.chapterName.match(/\d+/)?.[0] ?? "",
+        verseNumber: "1",
+        justEnteredChapter: true,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -784,7 +869,7 @@ export default function VerseScreen({ route, navigation }: any) {
     );
   }
 
-  const parsed = parseContent(verse.content, verse.title ?? divisionName);
+  const parsed = parseContentFromVerse(verse, verse.title ?? divisionName);
   const allVerseText = getAllVerseText(parsed);
   const suggestions = getSuggestions(allVerseText, searchQuery);
 
@@ -815,6 +900,7 @@ export default function VerseScreen({ route, navigation }: any) {
         ref={scrollRef}
         style={{ backgroundColor: "#fdf6e3" }}
         contentContainerStyle={{ paddingBottom: 52 }}
+        showsVerticalScrollIndicator={false}
         onScroll={(e) => {
           scrollYRef.current = e.nativeEvent.contentOffset.y;
         }}
@@ -842,7 +928,27 @@ export default function VerseScreen({ route, navigation }: any) {
           ) : (
             <>
               {settings.mantra && parsed.sanskrit ? (
-                <SanskritBlock text={parsed.sanskrit} query={searchQuery} />
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <TouchableOpacity
+                    disabled={!prevDivision}
+                    onPress={goToPrevVerse}
+                    style={{ padding: 6, opacity: prevDivision ? 1 : 0.25 }}
+                  >
+                    <Text style={{ fontSize: 28, color: "#8B0000", fontWeight: "700" }}>‹</Text>
+                  </TouchableOpacity>
+
+                  <View style={{ flex: 1 }}>
+                    <SanskritBlock text={parsed.sanskrit} query={searchQuery} />
+                  </View>
+
+                  <TouchableOpacity
+                    disabled={!nextDivision && !nextChapter}
+                    onPress={goToNextVerse}
+                    style={{ padding: 6, opacity: nextDivision || nextChapter ? 1 : 0.25 }}
+                  >
+                    <Text style={{ fontSize: 28, color: "#8B0000", fontWeight: "700" }}>›</Text>
+                  </TouchableOpacity>
+                </View>
               ) : null}
               {settings.synonyms ? (
                 <SynonymsBlock entries={parsed.synonyms} query={searchQuery} />
